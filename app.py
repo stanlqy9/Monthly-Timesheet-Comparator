@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from PyPDF2 import PdfReader
 
 # Page configuration
 st.set_page_config(
@@ -11,16 +12,9 @@ st.set_page_config(
 
 # Page title and introduction
 st.title("⏱️ Timesheet Comparator")
-st.markdown(
-    """ 
-    ---
-    """
-)
+st.markdown("---")
 
-#**Welcome to the Timesheet Comparator Tool!** 
-#Easily compare time records across multiple formats. Just drag and drop your files below, and we'll handle the rest.  
-
-# File upload section with styled headers
+# File upload section
 st.header("📂 Upload Files")
 st.write("Drag and drop your files below to begin the comparison:")
 
@@ -30,59 +24,44 @@ csudh_time_sheet_pdf = st.file_uploader(
 ghl_time_sheet_csv = st.file_uploader(
     "📋 Upload Actual Attendance (GHL Form CSV File)", type="csv"
 )
-actual_work_schedule_csv = st.file_uploader(
-    "📅 Upload Expected Attendance (Work Schedule CSV File)", type="csv"
-)
 
-st.button("Submit")
+if st.button("Submit"):
+    if csudh_time_sheet_pdf and ghl_time_sheet_csv:
+        # Extract data from CSUDH Timesheet PDF
+        pdf_reader = PdfReader(csudh_time_sheet_pdf)
+        pdf_text = ""
+        for page in pdf_reader.pages:
+            pdf_text += page.extract_text()
+        
+        # Parse times from CSUDH PDF (example format: "10-21-24 Monday 06:00 09:00")
+        csudh_data = []
+        for line in pdf_text.split("\n"):
+            if "Monday" in line or "Tuesday" in line or "Wednesday" in line or "Thursday" in line or "Friday" in line:
+                parts = line.split()
+                date = parts[0]
+                in_time = parts[2]
+                out_time = parts[3]
+                csudh_data.append({"Date": date, "In": in_time, "Out": out_time})
 
-# Divider for sections
-st.markdown("---")
+        csudh_df = pd.DataFrame(csudh_data)
 
-# Display mock accuracy table
-st.header("📊 Accuracy Table")
-st.write("Below is the accuracy table based on your uploaded files:")
+        # Load GHL Form CSV
+        ghl_df = pd.read_csv(ghl_time_sheet_csv)
 
-# Create mock data
-mock_data = {
-    "Date": ["2024-11-01", "2024-11-02", "2024-11-03", "2024-11-04", "2024-11-05"],
-    "CSUDH Timesheet (Hours)": [
-        "In: 6:00 Out: 9:00",
-        "In: 6:00 Out: 9:00",
-        "In: 6:00 Out: 9:00",
-        "In: 6:00 Out: 9:00",
-        "In: 6:00 Out: 9:00",
-    ],
-    "GHL Form (Hours)": [
-        "In: 6:00 Out: 9:00",
-        "In: 6:00 Out: 9:00",
-        "In: 6:00 Out: 9:00",
-        "In: 6:00 Out: 9:00",
-        "In: 6:00 Out: 9:00",
-    ],
-    "Work Schedule (Hours)": [
-        "In: 6:00 Out: 9:00",
-        "In: 6:00 Out: 9:00",
-        "In: 6:00 Out: 9:00",
-        "In: 6:00 Out: 9:00",
-        "In: 6:00 Out: 9:00",
-    ],
-    "Accuracy (%)": ["100%", "100%", "100%", "100%", "100%"],
-}
+        # Standardize GHL data
+        ghl_df = ghl_df.rename(columns={"Date": "Date", "Time In": "In", "Time Out": "Out"})
+        ghl_df = ghl_df[["Date", "In", "Out"]]
 
-# Create a DataFrame
-mock_df = pd.DataFrame(mock_data)
+        # Compare data
+        comparison = pd.merge(csudh_df, ghl_df, on="Date", suffixes=("_CSUDH", "_GHL"))
+        comparison["Match"] = (
+            (comparison["In_CSUDH"] == comparison["In_GHL"])
+            & (comparison["Out_CSUDH"] == comparison["Out_GHL"])
+        )
 
-# Display the table with an improved layout
-# Display the mock accuracy table
-st.dataframe(mock_df)
+        # Display results
+        st.header("📊 Comparison Results")
+        st.dataframe(comparison)
+    else:
+        st.error("Please upload both the CSUDH Timesheet and GHL Form files.")
 
-
-# Add a final note or footer
-st.markdown(
-    """
-    ---
-    ✅ **Pro Tip**: Ensure all files are for the same time period to get accurate results.  
-    📩 Need help? Contact [Stanley](mailto:snavarrete10@csudh.edu).
-    """
-)
